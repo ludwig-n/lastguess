@@ -7,7 +7,6 @@ import lastfm
 import settings
 
 import logging.config
-import pprint
 import random
 import sqlite3
 import threading
@@ -65,10 +64,11 @@ class Question:
         self.next_line = next_line
 
 def load_question(lst, used_tracks, questions, num_tries):
+    name = threading.current_thread().name
     for n_try in range(num_tries):
         with lockq:
             if len(questions) >= 10:
-                logging.info('{} done (no more questions needed)'.format(threading.currentThread().name))
+                logging.info('{} done (no more questions needed)'.format(name))
                 return
 
         tidx = random.randint(0, len(lst) - 1)
@@ -80,15 +80,16 @@ def load_question(lst, used_tracks, questions, num_tries):
         lyrics = genius.get_lyrics_by_name(lst[tidx][0], lst[tidx][1])
         with lockq:
             if len(questions) >= 10:
-                logging.info('{} done (no more questions needed)'.format(threading.currentThread().name))
+                logging.info('{} done (no more questions needed)'.format(name))
                 return
+
+        logging_params = (name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0])
+
         if lyrics is None:
-            logging.warning('{}, try {}/{}: couldn\'t find song ({} - {})'.format(
-                threading.currentThread().name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0]))
+            logging.warning('{}, try {}/{}: couldn\'t find song ({} - {})'.format(*logging_params))
             continue
         elif not lyrics:
-            logging.warning('{}, try {}/{}: found song but couldn\'t scrape lyrics ({} - {})'.format(
-                threading.currentThread().name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0]))
+            logging.warning('{}, try {}/{}: found song but couldn\'t scrape lyrics ({} - {})'.format(*logging_params))
             continue
 
         lines = lyrics.split('\n')
@@ -121,16 +122,15 @@ def load_question(lst, used_tracks, questions, num_tries):
             with lockq:
                 if len(questions) < 10:
                     questions.append(Question(lines[x], lst[tidx][0], lst[tidx][1], lines[x + 1]))
-                    logging.info('{}, try {}/{}: loaded question successfully ({} - {})'.format(
-                        threading.currentThread().name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0]))
+                    logging.info('{}, try {}/{}: loaded question successfully ({} - {})'.format(*logging_params))
                 if len(questions) >= 10:
-                    logging.info('{} done (no more questions needed)'.format(threading.currentThread().name))
+                    logging.info('{} done (no more questions needed)'.format(name))
                     return
         else:
-            logging.warning('{}, try {}/{}: loaded lyrics but couldn\'t find a valid pair ({} - {})'.format(
-                threading.currentThread().name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0]))
+            logging.warning('{}, try {}/{}: loaded lyrics but couldn\'t find a valid pair ({} - {})'
+                            .format(*logging_params))
 
-    logging.info('{} done after {} tries'.format(threading.currentThread().name, num_tries))
+    logging.info('{} done after {} tries'.format(name, num_tries))
 
 def title_decrease(x):
     return {3: 2, 2: 1, 1: 0}[x]
@@ -381,15 +381,12 @@ def handle_request():
 
 @app.route('/', methods=['GET', 'POST'])
 def main():
-    if flask.request.method == 'GET':
+    if flask.request.method in ('GET', 'HEAD'):
         return flask.render_template('app.html')
     elif flask.request.method == 'POST':
-        req = {}
-        for x in flask.request.form:
-            req[x] = flask.request.form[x]
-        logging.info('RECEIVED {}'.format(pprint.pformat(req, width=100000)))
+        logging.info('RECEIVED {}'.format(dict(sorted(flask.request.form.items()))))
         ret = handle_request()
-        logging.info('RETURNED {}'.format(pprint.pformat(ret, width=100000)))
+        logging.info('RETURNED {}'.format(dict(sorted(ret.items()))))
         return ret
 
 if __name__ == '__main__':
