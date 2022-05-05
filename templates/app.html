@@ -1,111 +1,92 @@
 <!DOCTYPE html>
 <html lang="en-US">
-<head>
+  <head>
     <title>lastguess</title>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, height=device-height, initial-scale=1.0'/>
-    <meta name='description' content='lastguess: guess your top last.fm songs by their lyrics'>
-    <meta name="google-site-verification" content="AcI9bb7QqS9UUVH82dXfxZb22h7iKVChElpc3jAfhOQ"/>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0">
+    <meta name="description" content="lastguess: guess your top last.fm songs by their lyrics">
+    <meta name="google-site-verification" content="AcI9bb7QqS9UUVH82dXfxZb22h7iKVChElpc3jAfhOQ">
+    <link href="https://fonts.googleapis.com/css?family=Nunito" rel="stylesheet">
     <link href="/static/style.css" rel="stylesheet">
-    <link href="/static/favicon.ico" rel="icon" type="image/png">
-    <link href="https://fonts.googleapis.com/css?family=Nunito" rel="stylesheet" type="text/css">
+    <link href="/static/favicon.ico" rel="icon">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="/static/game.js"></script>
-</head>
-<body onload="load()">
-<div class="container" id="container">
-    <label class="header" id="header" tabindex="-1">lastguess</label>
-
-    <div class="start" id="start">
+  </head>
+  <body onload="load()">
+    <div id="container">
+      <label id="header" tabindex="-1">lastguess</label>
+    
+      <div id="start">
         <label class="regular-center gr1 gc14"><a href="https://docs.google.com/document/d/15eTsCgyH8T3OJSka3UFnw5-XgMu40E74d6Sqg4IxRHw/mobilebasic" target="_blank">help the people of Ukraine</a> &nbsp;&bull;&nbsp; <a href="#" onclick="fuck_war(); return false;">help the Russian anti-war movement</a></label>
-
+    
         <label class="regular gr2 gc12" for="lg-username">last.fm username</label>
-        <input class="regular gr2 gc34" type="text" id="lg-username" spellcheck="false"/>
-
+        <input class="regular gr2 gc34" type="text" id="lg-username" spellcheck="false">
+    
         <label class="regular gr3 gc12" for="count">number of top tracks to use</label>
         <select class="regular gr3 gc34" id="count">
-            <option value="50">50</option>
-            <option value="100" selected>100</option>
-            <option value="200">200</option>
-            <option value="500">500</option>
-            <option value="1000">1000</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
         </select>
-
+    
         <label class="regular gr4 gc12" for="period">time period</label>
         <select class="regular gr4 gc34" id="period">
-            <option value="overall">overall</option>
-            <option value="7day">last 7 days</option>
-            <option value="1month">last 30 days</option>
-            <option value="3month">last 90 days</option>
-            <option value="6month">last 180 days</option>
-            <option value="12month">last 365 days</option>
+          <option value="overall">overall</option>
+          <option value="7day">last 7 days</option>
+          <option value="1month">last 30 days</option>
+          <option value="3month">last 90 days</option>
+          <option value="6month">last 180 days</option>
+          <option value="12month">last 365 days</option>
         </select>
-
+    
         <input class="regular gr6 gc23" type="button" id="start-button" value="start game" onclick="start()">
         <label class="small-center gr7 gc14" id="start-feed">&nbsp;</label>
-
-        <label class="small-center gr78 gc14" id="intro-label">guess your top last.fm songs by their lyrics
-enter your username and the song range to guess from to start</label>
-    </div>
-
-    <div class="game" id="game">
+    
+        <label class="small-center gr78 gc14" id="intro-label">guess your top last.fm songs by their lyrics<br>enter your username and the song range to guess from to start</label>
+      </div>
+    
+      <div id="game">
         <label class="round gr2 gc14" id="round">&nbsp;</label>
-
+    
         <label class="small-center gr3 gc14">what song is this line from?</label>
         <label class="question gr4 gc14" id="question">&nbsp;</label>
-
+    
         <label class="regular gr6 gc11" for="lg-title">title</label>
-        <input class="wide gr6 gc23" type="text" id="lg-title" onkeyup="guess()" spellcheck="false" autocomplete="off"/>
+        <input class="wide gr6 gc23" type="text" id="lg-title" onkeyup="guess()" spellcheck="false" autocomplete="off">
         <label class="small gr6 gc44" id="title-feed"></label>
-
+    
         <label class="regular gr7 gc11" for="lg-artist">artist</label>
-        <input class="wide gr7 gc23" type="text" id="lg-artist" onkeyup="guess()" spellcheck="false" autocomplete="off"/>
+        <input class="wide gr7 gc23" type="text" id="lg-artist" onkeyup="guess()" spellcheck="false" autocomplete="off">
         <label class="small gr7 gc44" id="artist-feed"></label>
-
+    
         <label class="regular gr8 gc11" for="lg-next-line">next line</label>
-        <input class="wide gr8 gc23" type="text" id="lg-next-line" onkeyup="guess()" spellcheck="false" autocomplete="off"/>
+        <input class="wide gr8 gc23" type="text" id="lg-next-line" onkeyup="guess()" spellcheck="false" autocomplete="off">
         <label class="small gr8 gc44" id="next-line-feed"></label>
-
+    
         <label class="regular gr10 gc12" id="points-feed"></label>
-        <input class="regular gr10 gc33" type="button" id="give-up-button" value="give up"
-               onclick="give_up_button_click()"/>
-        <input class="regular gr10 gc44" type="button" id="submit-button" value="submit"
-               onclick="submit_button_click()"/>
-
-        <label class="small-center gr11 gc14">you can also press enter to submit guesses
-capitalization and punctuation are ignored
-misspellings and minor mistakes are forgiven
-reload the page to restart the game</label>
-    </div>
-
-    <div class="results" id="results">
+        <input class="regular gr10 gc33" type="button" id="give-up-button" value="give up" onclick="give_up_button_click()">
+        <input class="regular gr10 gc44" type="button" id="submit-button" value="submit" onclick="submit_button_click()">
+    
+        <label class="small-center gr11 gc14">you can also press enter to submit guesses<br>capitalization and punctuation are ignored<br>misspellings and minor mistakes are forgiven<br>reload the page to restart the game</label>
+      </div>
+    
+      <div id="results">
         <label class="regular-center gr1 gc14">your score is</label>
         <label class="big gr2 gc14" id="final-score-feed">&nbsp;</label>
         <label class="regular-center gr3 gc14" id="rank-feed">&nbsp;</label>
         <label class="regular-center gr5 gc14">thanks for playing!</label>
-        <input class="regular gr6 gc23" type="button" value="play again" onclick="play_again()"/>
+        <input class="regular gr6 gc23" type="button" value="play again" onclick="play_again()">
+      </div>
+    
+      <div id="fuck-war">
+        <label class="regular-center gr2 gc14"><a class="bold" href="https://donate.ovdinfo.org/en" target="_blank">ОВД-Инфо / OVD-Info</a><br>provides free legal aid and brings media attention<br>to victims of political persecution in Russia,<br>most of whom are peaceful protesters<br><br><a class="bold" href="https://support.meduza.io/en" target="_blank">Медуза / Meduza</a><br>is one of the few remaining reliable sources<br>for honest and independent Russian-language reporting<br>on the war in Ukraine, the anti-war and anti-government protests,<br>and everything else the state doesn't want Russians to know about<br><br>these organizations accept donations from foreign citizens and need support</label>
+        <input class="regular gr4 gc23" type="button" value="back to the game" onclick="unfuck_war()">
+      </div>
+    
+      <label id="footer">by nick ludwig &nbsp;&bull;&nbsp; lyrics from <a href="https://genius.com" target="_blank" rel="noreferrer">genius</a></label>
+      <input class="regular" type="button" id="theme-button" onclick="switch_theme()">
     </div>
-
-    <div class="fuck-war" id="fuck-war">
-        <label class="regular-center gr2 gc14">
-            <b><a href="https://donate.ovdinfo.org/en" target="_blank">ОВД-Инфо / OVD-Info</a></b><br/>
-            provides free legal aid and brings media attention<br/>
-            to victims of political persecution in Russia,<br/>
-            most of whom are peaceful protesters<br/>
-            <br/>
-            <b><a href="https://support.meduza.io/en" target="_blank">Медуза / Meduza</a></b><br/>
-            is one of the few remaining reliable sources<br/>
-            for honest and independent Russian-language reporting<br/>
-            on the war in Ukraine, the anti-war and anti-government protests,<br/>
-            and everything else the state doesn't want Russians to know about<br/>
-            <br/>
-            these organizations accept donations from foreign citizens and need support
-        </label>
-        <input class="regular gr4 gc23" type="button" value="back to the game" onclick="unfuck_war()"/>
-    </div>
-
-    <label class="footer">by nick ludwig &nbsp;&bull;&nbsp; lyrics from <a href="https://genius.com" target="_blank" rel="noreferrer">genius</a></label>
-    <input class="regular theme-button" type="button" id="theme-button" onclick="switch_theme()"/>
-</div>
-</body>
+  </body>
 </html>

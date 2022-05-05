@@ -2,6 +2,8 @@
     box-sizing: border-box;
 }
 
+/* html + body + divs */
+
 html {
     height: 100%;
     font-size: min(21px, 3vw, 2.7vh);
@@ -14,7 +16,12 @@ html {
     --button-bg-color: #000000;
     --button-fg-color: #ffffff;
     --sub-color: #757575;
-    --sel-color: #673ab7;
+    
+    --button-hover-bg-color: #4527a0;
+    --input-focus-color: #673ab7;
+    --button-focus-color: #7e57c2;
+    --link-color: #4527a0;
+    
     --correct-color: #13ac00;
     --correct-color-dark: #057a00;
     --fail-color: #d50000;
@@ -28,7 +35,12 @@ html[theme="dark"] {
     --button-bg-color: #bdbdbd;
     --button-fg-color: #000000;
     --sub-color: #9e9e9e;
-    --sel-color: #9575cd;
+    
+    --button-hover-bg-color: #b39ddb;
+    --input-focus-color: #9575cd;
+    --button-focus-color: #7e57c2;
+    --link-color: #b39ddb;
+    
     --correct-color: #64dd17;
     --correct-color-dark: #1faa00;
     --fail-color: #e40022;
@@ -44,7 +56,7 @@ body {
     padding-bottom: clamp(10px, 10vh - 70px, 30px);
 }
 
-.container {
+#container {
     display: grid;
     width: 100%;
     max-width: 1000px;
@@ -55,7 +67,7 @@ body {
     grid-template-columns: 3fr 1fr;
 }
 
-.header {
+#header {
     grid-row: 1 / 2;
     grid-column: 1 / 3;
     text-align: center;
@@ -68,7 +80,11 @@ body {
     text-shadow: 0 0 7px black;
 }
 
-.start {
+#header:focus {
+    outline: 0;
+}
+
+#start {
     grid-row: 2 / 3;
     grid-column: 1 / 3;
     display: grid;
@@ -86,7 +102,7 @@ body {
     align-self: start;
 }
 
-.game {
+#game {
     grid-row: 2 / 3;
     grid-column: 1 / 3;
     display: none;
@@ -104,7 +120,7 @@ body {
     color: inherit;
 }
 
-.results {
+#results {
     grid-row: 2 / 3;
     grid-column: 1 / 3;
     display: none;
@@ -120,7 +136,7 @@ body {
     align-self: start;
 }
 
-.fuck-war {
+#fuck-war {
     grid-row: 2 / 3;
     grid-column: 1 / 3;
     display: none;
@@ -136,7 +152,7 @@ body {
     align-self: start;
 }
 
-.footer {
+#footer {
     grid-row: 3 / 4;
     grid-column: 1 / 2;
     font-size: 1rem;
@@ -145,12 +161,22 @@ body {
     margin-left: 5px;
 }
 
-.theme-button {
+#theme-button {
     grid-row: 3 / 4;
     grid-column: 2 / 3;
 }
 
-/* ------- */
+/* links */
+
+a, a:visited {
+    color: var(--link-color);
+}
+
+a.bold {
+    font-weight: bold;
+}
+
+/* text inputs + selects */
 
 input[type=text], select {
     background: var(--bg-color);
@@ -158,13 +184,9 @@ input[type=text], select {
     border-radius: 5px;
 }
 
-input[type=button] {
-    background: var(--button-bg-color);
-    color: var(--button-fg-color);
-    border: 3px solid var(--button-bg-color);
-    border-radius: 5px;
-    margin-left: 5px;
-    margin-right: 5px;
+input[type=text]:focus-visible, select:focus-visible {
+    outline: 0;
+    border-color: var(--input-focus-color);
 }
 
 input[type=text]:disabled, select:disabled {
@@ -176,45 +198,36 @@ input[type=text]:disabled, select:disabled {
     border-color: var(--sub-color);
 }
 
+/* buttons */
+
+input[type=button] {
+    background: var(--button-bg-color);
+    color: var(--button-fg-color);
+    border: 3px solid var(--button-bg-color);
+    border-radius: 5px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+@media (hover: hover) {
+    input[type=button]:enabled:hover {
+        outline: 0;
+        background: var(--button-hover-bg-color);
+        border-color: var(--button-hover-bg-color);
+    }
+}
+
+input[type=button]:focus-visible {
+    outline: 0;
+    border-color: var(--button-focus-color);
+}
+
 input[type=button]:disabled {
     background: var(--bg-color);
     color: var(--fg-color);
 }
 
-input[type=text]:focus, select:focus {
-    outline: 0;
-    border: 3px solid var(--sel-color);
-}
-
-input[type=button]:focus {
-    outline: 0;
-}
-
-label:focus {
-    outline: 0;
-}
-
-@media (hover: hover) {
-    input[type=button]:hover:enabled {
-        outline: 0;
-        background: var(--sel-color);
-        border: 3px solid var(--sel-color);
-    }
-
-    input[type=button]:focus {
-        border: 3px solid var(--sel-color);
-    }
-}
-
-a {
-    color: var(--sel-color);
-}
-
-a:visited {
-    color: var(--sel-color);
-}
-
-/* ------- */
+/* input+label classes */
 
 .regular {
     font-family: inherit;
@@ -278,7 +291,7 @@ a:visited {
     line-height: 1;
 }
 
-/* ------- */
+/* grid placement classes */
 
 .gr1 { grid-row: 1; }
 .gr2 { grid-row: 2; }
