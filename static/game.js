@@ -1,399 +1,342 @@
-let zind = 1;
-let war_fucked = false;
-let game_loaded = false;
+let questions;
+let round;
+let score;
+let title_last, artist_last, next_line_last;
+let title_done, artist_done, next_line_done;
+let title_pts, artist_pts, next_line_pts;
+
+function simplify(s) {
+    return s.replace(/[^\p{L}\p{N}]/ug, '').toLowerCase();
+}
+
+function similar(s1, s2) {
+    return s1 && s2 && (new difflib.SequenceMatcher(null, s1, s2)).ratio() >= 0.8;
+}
+
+function similar_simplified(s1, s2, try_shorten_first = false) {
+    s1 = simplify(s1);
+    s2 = simplify(s2);
+    return similar(s1, s2) || (try_shorten_first && s1.length > s2.length && similar(s1.slice(0, s2.length), s2));
+}
 
 // mobile keyboard fix (god bless user13442212 from stackoverflow)
-let viewport = document.querySelector("meta[name=viewport]");
-viewport.setAttribute("content", viewport.content + ", height=" + window.innerHeight);
+let viewport = document.querySelector('meta[name=viewport]');
+viewport.setAttribute('content', viewport.content + ', height=' + window.innerHeight);
 
-// yes this HAS to be done both here and in load()
-switch_theme_to(localStorage.getItem('theme') ? localStorage.getItem('theme') : 'light');
+switch_theme_to(localStorage.getItem('theme'));
 
-function update_game(res, refresh = false) {
-    if (res['status'] === 'session_expired') {
-        expire_session();
-    }
+$(document).ready(function () {
+    let war_fucked = false;
+    let game_loaded = false;
 
-    let tfeed = $("#title-feed")[0];
-    let afeed = $("#artist-feed")[0];
-    let lfeed = $("#next-line-feed")[0];
-    let tbox = $("#lg-title")[0];
-    let abox = $("#lg-artist")[0];
-    let lbox = $("#lg-next-line")[0];
-    let question = $("#question")[0];
-    let round = $("#round")[0];
-    let pfeed = $("#points-feed")[0];
-    let button = $("#give-up-button")[0];
+    switch_theme_to(localStorage.getItem('theme'));
 
-    round.innerHTML = "round " + res['round'] + " of 10";
-    question.innerHTML = res['question'];
+    $('#start').submit(function (event) {
+        event.preventDefault();
 
-    if ('title_feedback' in res || refresh) {
-        if (res['title_feedback'] === "locked") {
-            tfeed.style.color = gprop("--fail-color");
-            tfeed.innerHTML = "out of tries";
-            tbox.disabled = "true";
-            tbox.blur();
-            tbox.style.color = gprop("--fail-color-dark");
-        } else {
-            if (res['title_pts'] === 1) {
-                tfeed.innerHTML = "1pt";
+        let username = $('#lg-username').val().trim();
+        let count = $('#count').val();
+        let period = $('#period').val();
+
+        if (!username) {
+            show_error('please enter a last.fm username');
+            return;
+        }
+
+        $('#start').children().prop('disabled', true);
+        $('#start-feed').html('&nbsp;');
+
+        let button = $('#start-button');
+        button.html('working<span id="d1">.</span><span id="d2">.</span><span id="d3">.</span>');
+
+        let state = 0;
+        let interval = setInterval(function () {
+            if (state === 0) {
+                button.children().css('opacity', 0);
             } else {
-                tfeed.innerHTML = res['title_pts'] + "pts";
+                $(`#d${state}`).css('opacity', 1);
             }
+            state = (state + 1) % 4;
+        }, 500);
 
-            tfeed.style.color = gprop("--sub-color");
-
-            if (res['title_feedback'] === "success") {
-                tfeed.style.color = gprop("--correct-color");
-                tfeed.innerHTML += " (correct)";
-                tbox.disabled = "true";
-                tbox.blur();
-                tbox.style.color = gprop("--correct-color-dark");
-            } else if (res['title_feedback'] === "fail") {
-                tfeed.style.color = gprop("--fail-color");
-                tfeed.innerHTML += " (incorrect)";
-            }
-        }
-    }
-
-    if ('artist_feedback' in res || refresh) {
-        if (res['artist_feedback'] === "locked") {
-            afeed.style.color = gprop("--fail-color");
-            afeed.innerHTML = "out of tries";
-            abox.disabled = "true";
-            abox.blur();
-            abox.style.color = gprop("--fail-color-dark");
-        } else {
-            if (res['artist_pts'] === 1) {
-                afeed.innerHTML = "1pt";
-            } else {
-                afeed.innerHTML = res['artist_pts'] + "pts";
-            }
-
-            afeed.style.color = gprop("--sub-color");
-
-            if (res['artist_feedback'] === "success") {
-                afeed.style.color = gprop("--correct-color");
-                afeed.innerHTML += " (correct)";
-                abox.disabled = "true";
-                abox.blur();
-                abox.style.color = gprop("--correct-color-dark");
-            } else if (res['artist_feedback'] === "fail") {
-                afeed.style.color = gprop("--fail-color");
-                afeed.innerHTML += " (incorrect)";
-            }
-        }
-    }
-
-    if ('next_line_feedback' in res || refresh) {
-        if (res['next_line_feedback'] === "locked") {
-            lfeed.style.color = gprop("--fail-color");
-            lfeed.innerHTML = "out of tries";
-            lbox.disabled = "true";
-            lbox.blur();
-            lbox.style.color = gprop("--fail-color-dark");
-        } else {
-            if (res['next_line_pts'] === 1) {
-                lfeed.innerHTML = "1pt";
-            } else {
-                lfeed.innerHTML = res['next_line_pts'] + "pts";
-            }
-
-            lfeed.style.color = gprop("--sub-color");
-
-            if (res['next_line_feedback'] === "success") {
-                lfeed.style.color = gprop("--correct-color");
-                lfeed.innerHTML += " (correct)";
-                lbox.disabled = "true";
-                lbox.blur();
-                lbox.style.color = gprop("--correct-color-dark");
-            } else if (res['next_line_feedback'] === "fail") {
-                lfeed.style.color = gprop("--fail-color");
-                lfeed.innerHTML += " (incorrect)";
-            } else if (res['next_line_feedback'] === "too short") {
-                lfeed.style.color = gprop("--short-color");
-                lfeed.innerHTML += " (too short)";
-            }
-        }
-    }
-
-    pfeed.innerHTML = res['score'] + " out of " + res['max_score'] + " points so far";
-
-    button.blur();
-}
-
-function start() {
-    let username = $("#lg-username")[0];
-    let count = $("#count")[0];
-    let period = $("#period")[0];
-    let button = $("#start-button")[0];
-
-    if (!$.trim(username.value)) {
-        set_start_feed("please enter a last.fm username");
-        button.blur();
-        return;
-    }
-
-    $("#start").children().prop("disabled", true);
-    username.blur();
-    button.blur();
-    button.value = "working...";
-    $("#start-feed").html("&nbsp;");
-
-    $.post("/", {
-        "action": "start",
-        "username": username.value,
-        "count": count.value,
-        "period": period.value
-    }).done(function (res) {
-        if (res['status'] === 'invalid_username') {
-            set_start_feed("invalid last.fm username");
-        } else if (res['status'] === 'not_enough_tracks') {
-            set_start_feed("user has too few tracks in this time period");
-        } else if (res['status'] === 'unable_to_load_question') {
-            set_start_feed("couldn't find enough lyrics to play, try a different user or song range");
-        } else if (res['status'] === 'lastfm_error') {
-            set_start_feed("unknown last.fm error, please try again");
-        } else if (res['status'] === 'unknown_error') {
-            set_start_feed("unknown error, please try again");
-        } else {
-            $("#start").fadeOut(1000, function () {
-                $.post("/", {"action": "get_status"}).done(function (res) {
-                    reset_inputs();
-                    update_game(res, true);
-                    game_loaded = true;
-                    if (!war_fucked) {
-                        $("#game").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-                    }
-                });
-            });
-        }
-    });
-}
-
-function guess(e) {
-    if (!e) {
-        e = window.event;
-    }
-
-    if (e.keyCode === 13) {
-        $.post("/", {
-            "action": "get_status",
-            "title": $("#lg-title").val(),
-            "artist": $("#lg-artist").val(),
-            "next_line": $("#lg-next-line").val()
+        $.post('/', {
+            'action': 'start',
+            'username': username,
+            'count': count,
+            'period': period
         }).done(function (res) {
-            update_game(res);
-
-            if (res['round_ended']) {
-                get_answers();
-            } else {
-                let seq = ["lg-title", "lg-artist", "lg-next-line", "lg-title"];
-                let cur = $("#" + e.target.id);
-                while (cur.prop("disabled")) {
-                    for (let i = 0; i < 3; ++i) {
-                        if (seq[i] === cur[0].id) {
-                            cur = $("#" + seq[i + 1]);
-                            break;
-                        }
-                    }
+            if (res['status'] === 'ok') {
+                questions = res['questions'];
+                round = 0;
+                score = 0;
+                advance_round();
+                game_loaded = true;
+                if (!war_fucked) {
+                    fade_between('#start', '#game');
                 }
-
-                cur.focus();
+                clearInterval(interval);
+            } else if (res['status'] === 'invalid_username') {
+                show_error('invalid last.fm username');
+            } else if (res['status'] === 'not_enough_tracks') {
+                show_error('not enough tracks scrobbled in this time period');
+            } else if (res['status'] === 'failed_to_load_questions') {
+                show_error('couldn\'t find enough lyrics to play, try a different song range');
+            } else if (res['status'] === 'lastfm_down') {
+                show_error('looks like last.fm is down, please try again later');
+            } else {
+                show_error('something went wrong, please try again');
             }
         });
-    }
-}
-
-function get_answers() {
-    $.post("/", {"action": "get_answers"}).done(
-        function (res) {
-            if (res['status'] === 'session_expired') {
-                expire_session();
-            }
-
-            let tbox = $("#lg-title")[0];
-            let abox = $("#lg-artist")[0];
-            let lbox = $("#lg-next-line")[0];
-            let button = $("#give-up-button")[0];
-            let sbutton = $("#submit-button")[0];
-
-            tbox.value = res['title'];
-            abox.value = res['artist'];
-            lbox.value = res['next_line'];
-            tbox.disabled = true;
-            abox.disabled = true;
-            lbox.disabled = true;
-            sbutton.disabled = true;
-            button.blur();
-
-            if (res['game_ended']) {
-                button.value = "results";
-            } else {
-                button.value = "next round";
-            }
-        }
-    );
-}
-
-function next_round() {
-    let button = $("#give-up-button")[0];
-    button.disabled = true;
-    button.value = "working...";
-
-    $("#game").fadeOut(1000, function () {
-        $.post("/", {"action": "get_status"}).done(
-            function (res) {
-                reset_inputs();
-                update_game(res, true);
-                $("#game").fadeIn(1000).css("display", "grid");
-            }
-        );
     });
-}
 
-function show_results() {
-    $("#game").fadeOut(1000, function () {
-        $.post("/", {"action": "get_score"}).done(
-            function (res) {
-                if (res['status'] === 'session_expired') {
-                    expire_session();
+    $('#game').submit(function (event) {
+        event.preventDefault();
+
+        let active = document.activeElement;
+
+        if (!title_done) {
+            let guess = $('#lg-title').val().trim();
+            if (guess && guess !== title_last) {
+                title_last = guess;
+                let titles = questions[round - 1]['titles'];
+                let verdict;
+                if (titles.some((answer, index) => similar_simplified(guess, answer, index > 0))) {
+                    verdict = 'correct';
+                    title_done = true;
+                    score += title_pts;
+                } else {
+                    verdict = 'incorrect';
+                    --title_pts;
+                    if (title_pts === 0) {
+                        title_done = true;
+                    }
                 }
+                update_box_and_feed($('#lg-title'), $('#title-feed'), title_pts, verdict);
+            }
+        }
 
-                $("#final-score-feed").html(res['score']);
-                $("#rank-feed").html(res['rank']);
-                $("#give-up-button").blur();
+        if (!artist_done) {
+            let guess = $('#lg-artist').val().trim();
+            if (guess && guess !== artist_last) {
+                artist_last = guess;
+                let artists = questions[round - 1]['artists'];
+                let verdict;
+                if (artists.some((answer, index) => similar_simplified(guess, answer, index > 0))) {
+                    verdict = 'correct';
+                    artist_done = true;
+                    score += artist_pts;
+                } else {
+                    verdict = 'incorrect';
+                    --artist_pts;
+                    if (artist_pts === 0) {
+                        artist_done = true;
+                    }
+                }
+                update_box_and_feed($('#lg-artist'), $('#artist-feed'), artist_pts, verdict);
+            }
+        }
 
-                $("#results").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-            });
+        if (!next_line_done) {
+            let guess = $('#lg-next-line').val().trim();
+            if (guess && guess !== next_line_last) {
+                next_line_last = guess;
+                let answer = questions[round - 1]['next_line'];
+                let verdict;
+                if (simplify(guess).length < simplify(answer).length - 5) {
+                    verdict = 'too short';
+                } else if (similar_simplified(guess, answer, true)) {
+                    verdict = 'correct';
+                    next_line_done = true;
+                    score += next_line_pts;
+                } else {
+                    verdict = 'incorrect';
+                    --next_line_pts;
+                    if (next_line_pts === 2) {
+                        --next_line_pts;
+                    } else if (next_line_pts === 0) {
+                        next_line_done = true;
+                    }
+                }
+                update_box_and_feed($('#lg-next-line'), $('#next-line-feed'), next_line_pts, verdict);
+            }
+        }
+
+        $('#score-feed').html(`${score} out of ${round * 10} points so far`);
+
+        if (title_done && artist_done && next_line_done) {
+            show_answers();
+        } else if (active.disabled) {
+            let boxes = ['lg-title', 'lg-artist', 'lg-next-line'];
+            let ind = boxes.indexOf(active.id);
+            if (ind !== -1) {
+                while ([title_done, artist_done, next_line_done][ind]) {
+                    ind = (ind + 1) % 3;
+                }
+                document.getElementById(boxes[ind]).focus();
+            }
+        }
+    });
+
+    $('#give-up-button').click(function () {
+        if (title_done && artist_done && next_line_done) {
+            if (round === 10) {
+                $('#final-score-feed').html(score);
+                $('#rank-feed').html([
+                    [90, 100, 'indicating Universal Acclaim'],
+                    [75, 89, 'indicating Generally Favorable Reviews'],
+                    [70, 74, 'indicating Mixed or Average Reviews'],
+                    [69, 69, 'Nice.'],
+                    [50, 68, 'indicating Mixed or Average Reviews'],
+                    [20, 49, 'indicating Generally Unfavorable Reviews'],
+                    [0, 19, 'indicating Overwhelming Dislike']
+                ].find(tup => (tup[0] <= score) && (score <= tup[1]))[2]);
+                fade_between('#game', '#results');
+            } else {
+                fade_between('#game', '#game', advance_round);
+            }
+        } else {
+            $('#header').focus();
+            if (!title_done) {
+                title_done = true;
+                title_pts = 0;
+            }
+            if (!artist_done) {
+                artist_done = true;
+                artist_pts = 0;
+            }
+            if (!next_line_done) {
+                next_line_done = true;
+                next_line_pts = 0;
+            }
+            show_answers();
+        }
+    });
+
+    $('#play-again-button').click(function () {
+        game_loaded = false;
+
+        $('#start').children().prop('disabled', false);
+        $('#start-button').html('start game');
+        $('#start-feed').html('&nbsp;');
+        $('#intro-label').show();
+
+        fade_between('#results', '#start');
+    });
+
+    $('#theme-button').click(function () {
+        if ($('html').attr('theme') === 'light') {
+            switch_theme_to('dark');
+        } else {
+            switch_theme_to('light');
+        }
+    });
+
+    $('#fuck-war-link').click(function (event) {
+        event.preventDefault();
+        war_fucked = true;
+        fade_between('#start', '#fuck-war');
+    });
+
+    $('#unfuck-war-button').click(function () {
+        war_fucked = false;
+        if (game_loaded) {
+            fade_between('#fuck-war', '#game');
+        } else {
+            fade_between('#fuck-war', '#start');
+        }
+    });
+});
+
+function show_error(message) {
+    $('#start').children().prop('disabled', false);
+    $('#start-button').html('start game');
+    $('#start-feed').html(message);
+    $('#intro-label').hide();
+}
+
+function fade_between(from, to, do_between) {
+    $(from).css('z-index', -1).fadeOut(750, function () {
+        $('#header').focus();
+        if (do_between) {
+            do_between();
+        }
+        $(to).stop().fadeIn(750).css('display', 'grid').css('z-index', 1);
     });
 }
 
-function play_again() {
-    game_loaded = false;
+function advance_round() {
+    ++round;
+    title_last = artist_last = next_line_last = '';
+    title_done = artist_done = next_line_done = false;
+    title_pts = artist_pts = 3;
+    next_line_pts = 4;
 
-    $("#start").children().prop("disabled", false);
-    $("#start-button").val("start game");
-    $("#start-feed").html("&nbsp;");
-    $("#intro-label").show();
-    $("#header")[0].focus();
+    $('#round').html(`round ${round} of 10`);
+    $('#question').html(questions[round - 1]['line']);
 
-    $("#results").fadeOut(1000, function () {
-        $("#start").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-    });
+    $('#game > input').prop('disabled', false).css('color', 'var(--fg-color)').val('');
+    $('.parent-feed').show().css('color', 'var(--sub-color)');
+    $('.points-feed').html('3pts');
+    $('#next-line-points').html('4pts');
+    $('.verdict-feed').hide();
+
+    $('#give-up-button').html('give up');
+    $('#submit-button').prop('disabled', false);
+
+    $('#score-feed').html(`${score} out of ${round * 10} points so far`);
 }
 
-function give_up_button_click() {
-    $("#header")[0].focus();
-    let button = $("#give-up-button")[0];
-    // god tier coding: decide what the button does based on what it says
-    if (button.value === "give up") {
-        get_answers();
-    } else if (button.value === "next round") {
-        next_round();
+function update_box_and_feed(box, parent_feed, points, last_result) {
+    let points_feed = parent_feed.children('.points-feed');
+    let verdict_feed = parent_feed.children('.verdict-feed');
+    if (points === 0) {
+        box.css('color', 'var(--fail-color-dark)').prop('disabled', true);
+        parent_feed.css('color', 'var(--fail-color)');
+        points_feed.html('out of tries');
+        verdict_feed.hide();
     } else {
-        show_results();
+        points_feed.html(`${points}pt${points === 1 ? '' : 's'}`)
+        verdict_feed.html(`(${last_result})`).fadeIn(150);
+        if (last_result === 'correct') {
+            box.css('color', 'var(--correct-color-dark)').prop('disabled', true);
+            parent_feed.css('color', 'var(--correct-color)');
+        } else if (last_result === 'incorrect') {
+            parent_feed.css('color', 'var(--fail-color)');
+        } else {
+            parent_feed.css('color', 'var(--short-color)');
+        }
     }
 }
 
-function load() {
-    switch_theme_to(localStorage.getItem('theme') ? localStorage.getItem('theme') : 'light');
-}
+function show_answers() {
+    $('#lg-title').prop('disabled', true).val(questions[round - 1]['titles'][0]);
+    $('#lg-artist').prop('disabled', true).val(questions[round - 1]['artists'][0]);
+    $('#lg-next-line').prop('disabled', true).val(questions[round - 1]['next_line']);
+    $('#submit-button').prop('disabled', true);
 
-function reset_inputs() {
-    let tbox = $("#lg-title")[0];
-    let abox = $("#lg-artist")[0];
-    let lbox = $("#lg-next-line")[0];
-    let button = $("#give-up-button")[0];
-    let sbutton = $("#submit-button")[0];
-    tbox.disabled = false;
-    abox.disabled = false;
-    lbox.disabled = false;
-    tbox.value = "";
-    abox.value = "";
-    lbox.value = "";
-    tbox.style.color = gprop("--fg-color");
-    abox.style.color = gprop("--fg-color");
-    lbox.style.color = gprop("--fg-color");
+    if (round === 10) {
+        $('#give-up-button').html('results');
+    } else {
+        $('#give-up-button').html('next round');
+    }
 
-    button.disabled = false;
-    button.value = "give up";
-    sbutton.disabled = false;
-}
-
-function submit_button_click() {
-    $.post("/", {
-        "action": "get_status",
-        "title": $("#lg-title").val(),
-        "artist": $("#lg-artist").val(),
-        "next_line": $("#lg-next-line").val()
-    }).done(function (res) {
-        $("#submit-button").blur();
-        update_game(res);
-
-        if (res['round_ended']) {
-            get_answers();
-        }
+    $.post('/', {
+        'action': 'submit_score',
+        'round': round,
+        'title_pts': title_pts,
+        'artist_pts': artist_pts,
+        'next_line_pts': next_line_pts
     });
-}
-
-function set_start_feed(message) {
-    $("#start-feed").html(message);
-    $("#intro-label").hide();
-    $("#start").children().prop("disabled", false);
-    $("#start-button").val("start game");
 }
 
 function switch_theme_to(theme) {
-    if (theme === 'light') {
-        $("#theme-button").val("dark theme");
-        document.documentElement.setAttribute('theme', theme);
-        localStorage.setItem('theme', theme);
+    if (theme === 'dark') {
+        localStorage.setItem('theme', 'dark');
+        $('html').attr('theme', 'dark');
+        $('#theme-button').html('light theme');
     } else {
-        $("#theme-button").val("light theme");
-        document.documentElement.setAttribute('theme', theme);
-        localStorage.setItem('theme', theme);
+        localStorage.setItem('theme', 'light');
+        $('html').attr('theme', 'light');
+        $('#theme-button').html('dark theme');
     }
-}
-
-function switch_theme() {
-    let cur = localStorage.getItem('theme') ? localStorage.getItem('theme') : 'light';
-
-    if (cur === "light") {
-        switch_theme_to("dark");
-    } else {
-        switch_theme_to("light");
-    }
-
-    $("#theme-button").blur();
-}
-
-function expire_session() {
-    window.alert("sorry, your session has expired. please start a new game");
-    location.reload();
-}
-
-function gprop(prop) {
-    return "var(" + prop + ")";
-}
-
-function fuck_war() {
-    war_fucked = true;
-    $("#header")[0].focus();
-    $("#start").fadeOut(1000, function () {
-        $("#fuck-war").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-    });
-}
-
-function unfuck_war() {
-    war_fucked = false;
-    $("#header")[0].focus();
-    $("#fuck-war").fadeOut(1000, function () {
-        if (game_loaded) {
-            $("#game").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-        } else {
-            $("#start").css("z-index", zind++).fadeIn(1000).css("display", "grid");
-        }
-    });
 }

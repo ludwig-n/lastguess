@@ -1,3 +1,8 @@
+import logging.config
+import random
+import sqlite3
+import threading
+
 import flask
 
 import comparing
@@ -5,12 +10,6 @@ import filtering
 import genius
 import lastfm
 import settings
-
-import logging.config
-import random
-import sqlite3
-import threading
-import time
 
 logging.config.dictConfig({
     'version': 1,
@@ -41,353 +40,242 @@ logging.config.dictConfig({
     }
 })
 
-NUM_LOADERS = 15
-MAX_NUM_TRIES = 10
-RANKS = {
-    (90, 100): 'indicating Universal Acclaim',
-    (75, 89): 'indicating Generally Favorable Reviews',
-    (70, 74): 'indicating Mixed or Average Reviews',
-    (69, 69): 'Nice.',
-    (50, 68): 'indicating Mixed or Average Reviews',
-    (20, 49): 'indicating Generally Unfavorable Reviews',
-    (0, 19): 'indicating Overwhelming Dislike'
-}
-
-locku = threading.Lock()
-lockq = threading.Lock()
-
 class Question:
     def __init__(self, line, title, artist, next_line):
         self.line = line
-        self.title = title
-        self.artist = artist
+
+        self.titles = [title]
+        for filter_list in (filtering.TITLE_JUNK_FILTERS, filtering.BRACKET_FILTERS):
+            alt = filtering.apply_filters(self.titles[-1], filter_list)
+            if alt != self.titles[-1]:
+                self.titles.append(filtering.apply_filters(alt, filtering.CLEANUP_FILTERS))
+
+        self.artists = [artist]
+        for filter_list in (filtering.ARTIST_JUNK_FILTERS, filtering.BRACKET_FILTERS):
+            alt = filtering.apply_filters(self.artists[-1], filter_list)
+            if alt != self.artists[-1]:
+                self.artists.append(filtering.apply_filters(alt, filtering.CLEANUP_FILTERS))
+
         self.next_line = next_line
 
-def load_question(lst, used_tracks, questions, num_tries):
+track_enumerator_lock = threading.Lock()
+questions_lock = threading.Lock()
+
+def load_questions(track_enumerator, questions, max_total_tries=150):
     name = threading.current_thread().name
-    for n_try in range(num_tries):
-        with lockq:
+    while True:
+        with questions_lock:
             if len(questions) >= 10:
                 logging.info('{} done (no more questions needed)'.format(name))
                 return
 
-        tidx = random.randint(0, len(lst) - 1)
-        with locku:
-            while tidx in used_tracks:
-                tidx = random.randint(0, len(lst) - 1)
-            used_tracks.add(tidx)
+        with track_enumerator_lock:
+            try:
+                index, track = next(track_enumerator)
+            except StopIteration:
+                logging.warning('{} exiting (out of tracks)'.format(name))
+                return
+        if index >= max_total_tries:
+            logging.warning('{} exiting (exceeded {} total tries)'.format(name, max_total_tries))
+            return
 
-        lyrics = genius.get_lyrics_by_name(lst[tidx][0], lst[tidx][1])
-        with lockq:
+        lyrics = genius.get_lyrics_by_name(track.title, track.artist)
+        
+        with questions_lock:
             if len(questions) >= 10:
                 logging.info('{} done (no more questions needed)'.format(name))
                 return
 
-        logging_params = (name, n_try + 1, num_tries, lst[tidx][1], lst[tidx][0])
+        logging_prefix = '{}, track {} ({} - {}):'.format(name, index + 1, track.artist, track.title)
 
         if lyrics is None:
-            logging.warning('{}, try {}/{}: couldn\'t find song ({} - {})'.format(*logging_params))
+            logging.warning('{} couldn\'t find track on genius'.format(logging_prefix))
             continue
         elif not lyrics:
-            logging.warning('{}, try {}/{}: found song but couldn\'t scrape lyrics ({} - {})'.format(*logging_params))
+            logging.warning('{} found track on genius but couldn\'t scrape lyrics'.format(logging_prefix))
             continue
 
         lines = lyrics.split('\n')
-        slines = [comparing.simplify(x) for x in lines]
+        simplified_lines = [comparing.simplify(x) for x in lines]
 
         usable = [True] * len(lines)
         duplicate = [False] * len(lines)
 
         for i in range(len(lines)):
-            if not slines[i] or '[' in lines[i]:
+            if not simplified_lines[i] or '[' in lines[i]:
                 usable[i] = False
                 continue
             for j in range(i):
-                if usable[j] and comparing.similar(slines[i][:len(slines[j])], slines[j][:len(slines[i])]):
+                if usable[j] and comparing.similar(simplified_lines[i][:len(simplified_lines[j])],
+                                                   simplified_lines[j][:len(simplified_lines[i])]):
                     duplicate[i] = True
                     duplicate[j] = True
                     break
 
         valid_pairs = []
         for i in range(len(lines) - 1):
-            if not usable[i] or duplicate[i] or not usable[i + 1]:
-                continue
-            if 15 <= len(slines[i]) <= 50 and \
-               15 <= len(slines[i + 1]) <= 50 and \
-               '(' not in lines[i] and '(' not in lines[i + 1]:
-                valid_pairs.append(i)
+            if usable[i] and \
+                    usable[i + 1] and \
+                    not duplicate[i] and \
+                    15 <= len(simplified_lines[i]) <= 50 and \
+                    15 <= len(simplified_lines[i + 1]) <= 50 and \
+                    '(' not in lines[i] and \
+                    '(' not in lines[i + 1]:
+                valid_pairs.append((lines[i], lines[i + 1]))
 
         if valid_pairs:
-            x = random.choice(valid_pairs)
-            with lockq:
+            line, next_line = random.choice(valid_pairs)
+            with questions_lock:
                 if len(questions) < 10:
-                    questions.append(Question(lines[x], lst[tidx][0], lst[tidx][1], lines[x + 1]))
-                    logging.info('{}, try {}/{}: loaded question successfully ({} - {})'.format(*logging_params))
+                    questions.append(Question(line, track.title, track.artist, next_line))
+                    logging.info('{} loaded question successfully'.format(logging_prefix))
                 if len(questions) >= 10:
                     logging.info('{} done (no more questions needed)'.format(name))
                     return
         else:
-            logging.warning('{}, try {}/{}: loaded lyrics but couldn\'t find a valid pair ({} - {})'
-                            .format(*logging_params))
-
-    logging.info('{} done after {} tries'.format(name, num_tries))
-
-def title_decrease(x):
-    return {3: 2, 2: 1, 1: 0}[x]
-
-def artist_decrease(x):
-    return {3: 2, 2: 1, 1: 0}[x]
-
-def next_line_decrease(x):
-    return {4: 3, 3: 1, 1: 0}[x]
-
-def get_rank(x):
-    for key in RANKS:
-        if key[0] <= x <= key[1]:
-            return RANKS[key]
+            logging.warning('{} loaded lyrics but couldn\'t find a valid pair'.format(logging_prefix))
 
 app = flask.Flask(__name__)
 app.secret_key = settings.FLASK_SECRET_KEY
 
-def handle_request():
+def handle_post_request():
     action = flask.request.form.get('action')
-
-    if action not in ['start', 'get_status', 'get_answers', 'get_score']:
-        return {}
-
-    if action != 'start' and 'id' not in flask.session:
-        return {'status': 'session_expired'}
-
-    db = sqlite3.connect(settings.DB_PATH)
-    db.row_factory = sqlite3.Row
 
     if action == 'start':
         username = flask.request.form.get('username')
         count = flask.request.form.get('count')
         period = flask.request.form.get('period')
+        if username is None \
+                or count not in ('50', '100', '200', '500', '1000') \
+                or period not in ('overall', '7day', '1month', '3month', '6month', '12month'):
+            return {'status': 'bad_request'}
 
-        username = username.strip()
-        if not username:
-            return {'status': 'invalid_username'}
+        username = username.lower()
 
         logging.info('loading last.fm tracks')
-        tracks = lastfm.get_top_tracks(username, int(count), period)
+        try:
+            tracks = lastfm.get_top_tracks(username, int(count), period)
+        except lastfm.LastFMError as error:
+            if error.code == 6:
+                return {'status': 'invalid_username'}
+            elif error.code == 8:
+                logging.error('last.fm returned error code 8')
+                return {'status': 'lastfm_down'}
+            else:
+                raise
         logging.info('loaded last.fm tracks')
 
-        if tracks and tracks[0] is None:
-            if tracks[1] == 6:
-                return {'status': 'invalid_username'}
-            elif tracks[1] == -1:
-                logging.error('unknown error when loading last.fm tracks ({}/{}/{})'.format(username, count, period))
-                return {'status': 'unknown_error'}
-            else:
-                logging.error('last.fm error with code {} ({}/{}/{})'.format(tracks[1], username, count, period))
-                return {'status': 'lastfm_error'}
-        elif len(tracks) < 50:
+        if len(tracks) < 10:
             return {'status': 'not_enough_tracks'}
 
+        db = sqlite3.connect(settings.DB_PATH)
+        db.row_factory = sqlite3.Row
+        cursor = db.cursor()
+
+        cursor.execute('SELECT question.title, question.artist FROM game INNER JOIN question ON game.username = ? '
+                       'AND game.id = question.game_id AND game.rounds_completed + 1 >= question.round '
+                       'ORDER BY game.time_updated DESC LIMIT ?', (username, int(count) * 3 // 5))
+        used_tracks = {(row['title'], row['artist']) for row in cursor.fetchall()}
+
+        if used_tracks:
+            primary_tracks = []
+            secondary_tracks = []
+            for track in tracks:
+                if (track.title, track.artist) in used_tracks:
+                    secondary_tracks.append(track)
+                else:
+                    primary_tracks.append(track)
+
+            random.shuffle(primary_tracks)
+            random.shuffle(secondary_tracks)
+            tracks = primary_tracks + secondary_tracks
+        else:
+            random.shuffle(tracks)
+
+        track_enumerator = enumerate(tracks)
         questions = []
-        used_tracks = set()
 
         logging.info('loading questions')
-        threads = [threading.Thread(target=load_question, args=(tracks, used_tracks, questions,
-                                    min(MAX_NUM_TRIES, len(tracks) // NUM_LOADERS + int(i < len(tracks) % NUM_LOADERS))),
-                                    name='Question Loader {}'.format(i + 1)) for i in range(NUM_LOADERS)]
+        threads = [threading.Thread(target=load_questions, args=(track_enumerator, questions),
+                                    name='Question Loader {}'.format(i + 1)) for i in range(15)]
 
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-            with lockq:
+            with questions_lock:
                 if len(questions) >= 10:
                     break
 
-        with lockq:
+        with questions_lock:
             if len(questions) < 10:
                 logging.error('failed to load questions ({}/{}/{})'.format(username, count, period))
-                return {'status': 'unable_to_load_question'}
+                return {'status': 'failed_to_load_questions'}
             elif len(questions) > 10:  # don't think this can actually happen but just in case
                 questions = questions[:10]
 
         logging.info('loaded questions')
 
+        cursor.execute('INSERT INTO game(time_updated, username, count, period, rounds_completed, score) '
+                       'VALUES (strftime("%s"), ?, ?, ?, 0, 0)', (username, count, period))
+        flask.session['game_id'] = game_id = cursor.lastrowid
+
+        with questions_lock:
+            for i, question in enumerate(questions, start=1):
+                cursor.execute('INSERT INTO question(game_id, round, line, title, artist, next_line, '
+                               'title_pts, artist_pts, next_line_pts) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
+                               (game_id, i, question.line, question.titles[0], question.artists[0], question.next_line))
+
+        db.commit()
+
+        return {'status': 'ok', 'questions': [vars(question) for question in questions]}
+    elif action == 'submit_score':
+        try:
+            round = int(flask.request.form.get('round'))
+            title_pts = int(flask.request.form.get('title_pts'))
+            artist_pts = int(flask.request.form.get('artist_pts'))
+            next_line_pts = int(flask.request.form.get('next_line_pts'))
+        except ValueError:
+            return {'status': 'bad_request'}
+        if not (1 <= round <= 10 and 0 <= title_pts <= 3 and 0 <= artist_pts <= 3 and next_line_pts in (0, 1, 3, 4)):
+            return {'status': 'bad_request'}
+
+        game_id = flask.session.get('game_id')
+        if game_id is None:
+            return {'status': 'game_not_found'}
+
+        db = sqlite3.connect(settings.DB_PATH)
+        db.row_factory = sqlite3.Row
         cursor = db.cursor()
-        cursor.execute('INSERT INTO session(timestamp, username, count, period, round, score, '
-                       'title_pts, artist_pts, next_line_pts, '
-                       'title_done, artist_done, next_line_done, '
-                       'title_last, artist_last, next_line_last) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                       (int(time.time()), username, count, period, 0, 0, 3, 3, 4, 0, 0, 0, '', '', ''))
-        sid = cursor.lastrowid
-        flask.session['id'] = sid
 
-        with lockq:
-            for i, question in enumerate(questions):
-                cursor.execute('INSERT INTO question(session_id, round_id, line, title, artist, next_line) '
-                               'VALUES (?, ?, ?, ?, ?, ?)',
-                               (sid, i, question.line, question.title, question.artist, question.next_line))
+        cursor.execute('SELECT score, rounds_completed FROM game WHERE id = ?', (game_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return {'status': 'game_not_found'}
 
+        cursor.execute('UPDATE game SET time_updated = strftime("%s"), rounds_completed = ?, score = ? WHERE id = ?',
+                       (row['rounds_completed'] + 1, row['score'] + title_pts + artist_pts + next_line_pts, game_id))
+        cursor.execute('UPDATE question SET title_pts = ?, artist_pts = ?, next_line_pts = ? '
+                       'WHERE game_id = ? AND round = ?', (title_pts, artist_pts, next_line_pts, game_id, round))
         db.commit()
 
         return {'status': 'ok'}
     else:
-        sid = flask.session['id']
-        cursor = db.cursor()
-
-        cursor.execute('SELECT * FROM session WHERE id = ?', (sid,))
-        data = cursor.fetchone()
-
-        if data is None:
-            return {'status': 'session_expired'}
-        else:
-            ses = dict(data)
-
-        cursor.execute('SELECT * FROM question WHERE session_id = ? AND round_id = ?', (sid, ses['round']))
-        question = cursor.fetchone()
-
-        ret = {}
-
-        if action == 'get_status':
-            title = flask.request.form.get('title')
-            artist = flask.request.form.get('artist')
-            next_line = flask.request.form.get('next_line')
-
-            if title or artist or next_line:
-                title = title.strip()
-                artist = artist.strip()
-                next_line = next_line.strip()
-
-                if title and title != ses['title_last'] and not ses['title_done']:
-                    ses['title_last'] = title
-                    answer = question['title']
-
-                    guessed_correctly = comparing.similar_simplified(title, answer)
-                    if not guessed_correctly:
-                        for flt in [filtering.TITLE_JUNK_FILTERS, filtering.BRACKET_FILTERS]:
-                            old_answer, answer = answer, filtering.apply_filters(answer, flt)
-                            if old_answer != answer and comparing.similar_simplified(title, answer,
-                                                                                     try_shorten_first=True):
-                                guessed_correctly = True
-                                break
-
-                    if guessed_correctly:
-                        ret['title_feedback'] = 'success'
-                        ses['title_done'] = True
-                        ses['score'] += ses['title_pts']
-                    else:
-                        ses['title_pts'] = title_decrease(ses['title_pts'])
-                        if ses['title_pts'] == 0:
-                            ret['title_feedback'] = 'locked'
-                            ses['title_done'] = True
-                        else:
-                            ret['title_feedback'] = 'fail'
-
-                if artist and artist != ses['artist_last'] and not ses['artist_done']:
-                    ses['artist_last'] = artist
-                    answer = question['artist']
-
-                    guessed_correctly = comparing.similar_simplified(artist, answer)
-                    if not guessed_correctly:
-                        for flt in [filtering.ARTIST_JUNK_FILTERS, filtering.BRACKET_FILTERS]:
-                            old_answer, answer = answer, filtering.apply_filters(answer, flt)
-                            if old_answer != answer and comparing.similar_simplified(artist, answer,
-                                                                                     try_shorten_first=True):
-                                guessed_correctly = True
-                                break
-
-                    if guessed_correctly:
-                        ret['artist_feedback'] = 'success'
-                        ses['artist_done'] = True
-                        ses['score'] += ses['artist_pts']
-                    else:
-                        ses['artist_pts'] = artist_decrease(ses['artist_pts'])
-                        if ses['artist_pts'] == 0:
-                            ret['artist_feedback'] = 'locked'
-                            ses['artist_done'] = True
-                        else:
-                            ret['artist_feedback'] = 'fail'
-
-                if next_line and next_line != ses['next_line_last'] and not ses['next_line_done']:
-                    ses['next_line_last'] = next_line
-                    sguess = comparing.simplify(next_line)
-                    sline = comparing.simplify(question['next_line'])
-
-                    if len(sguess) < len(sline) - 5:
-                        ret['next_line_feedback'] = 'too short'
-                    elif comparing.similar_simplified(sguess, sline, try_shorten_first=True):
-                        ret['next_line_feedback'] = 'success'
-                        ses['next_line_done'] = True
-                        ses['score'] += ses['next_line_pts']
-                    else:
-                        ses['next_line_pts'] = next_line_decrease(ses['next_line_pts'])
-                        if ses['next_line_pts'] == 0:
-                            ret['next_line_feedback'] = 'locked'
-                            ses['next_line_done'] = True
-                        else:
-                            ret['next_line_feedback'] = 'fail'
-
-            round_ended = int(ses['title_done'] and ses['artist_done'] and ses['next_line_done'])
-
-            ret.update({
-                'status': 'ok',
-                'round': ses['round'] + 1,
-                'question': question['line'],
-                'title_pts': ses['title_pts'],
-                'artist_pts': ses['artist_pts'],
-                'next_line_pts': ses['next_line_pts'],
-                'score': ses['score'],
-                'max_score': (ses['round'] + 1) * 10,
-                'round_ended': round_ended,
-                'game_ended': int(round_ended and ses['round'] + 1 == 10),
-            })
-
-        elif action == 'get_answers':  # also switches to next round
-            ses['round'] += 1
-            ses['title_pts'] = 3
-            ses['artist_pts'] = 3
-            ses['next_line_pts'] = 4
-            ses['title_done'] = False
-            ses['artist_done'] = False
-            ses['next_line_done'] = False
-            ses['title_last'] = ''
-            ses['artist_last'] = ''
-            ses['next_line_last'] = ''
-
-            ret = {
-                'status': 'ok',
-                'title': question['title'],
-                'artist': question['artist'],
-                'next_line': question['next_line'],
-                'game_ended': int(ses['round'] == 10)
-            }
-
-        elif action == 'get_score':
-            ret = {
-                'status': 'ok',
-                'score': ses['score'],
-                'rank': get_rank(ses['score'])
-            }
-
-        ses['timestamp'] = int(time.time())
-        fields = []
-        values = []
-        for x in ses:
-            fields.append('{} = ?'.format(x))
-            values.append(ses[x])
-        values.append(sid)
-        cursor.execute('UPDATE session SET ' + ', '.join(fields) + ' WHERE id = ?', tuple(values))
-        db.commit()
-
-        return ret
+        return {'status': 'bad_request'}
 
 @app.route('/', methods=['GET', 'POST'])
 def main():
-    if flask.request.method in ('GET', 'HEAD'):
+    if flask.request.method == 'POST':
+        logging.info('RECEIVED {}'.format(dict(flask.request.form.items())))
+        try:
+            response = handle_post_request()
+        except:
+            logging.exception('exception while processing post request:')
+            response = {'status': 'unknown_error'}
+        logging.info('RETURNED {}'.format(response))
+        return response
+    else:
         return flask.render_template('app.html')
-    elif flask.request.method == 'POST':
-        logging.info('RECEIVED {}'.format(dict(sorted(flask.request.form.items()))))
-        ret = handle_request()
-        logging.info('RETURNED {}'.format(dict(sorted(ret.items()))))
-        return ret
 
 if __name__ == '__main__':
     app.run(host=settings.HOST, port=settings.PORT, threaded=True)

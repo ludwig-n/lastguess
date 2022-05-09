@@ -5,22 +5,14 @@ import comparing
 import filtering
 import settings
 
-import json
-
 def search(query):
-    try:
-        res = requests.get('http://api.genius.com/search',
-                           params={'access_token': settings.GENIUS_API_TOKEN, 'q': query}).json()
-    except (requests.exceptions.ProxyError, requests.exceptions.SSLError, json.decoder.JSONDecodeError):
-        return []
+    res = requests.get('https://api.genius.com/search',
+                       params={'access_token': settings.GENIUS_API_TOKEN, 'q': query}).json()
 
     return [x['result'] for x in res['response']['hits']]
 
 def get_lyrics(song):
-    try:
-        res = requests.get(song['url']).content.decode('utf-8')[2:-1]
-    except (requests.exceptions.ProxyError, requests.exceptions.SSLError):
-        return ''
+    res = requests.get(song['url']).content.decode('utf-8')[2:-1]
 
     paragraphs = bs4.BeautifulSoup(res, 'lxml').find_all(attrs={'data-lyrics-container': 'true'})
     for par in paragraphs:
