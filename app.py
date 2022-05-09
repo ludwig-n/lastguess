@@ -275,7 +275,11 @@ def main():
         logging.info('RETURNED {}'.format(response))
         return response
     else:
-        return flask.render_template('app.html')
+        response = flask.make_response(flask.render_template('app.html'))
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
 
 if __name__ == '__main__':
     app.run(host=settings.HOST, port=settings.PORT, threaded=True)
