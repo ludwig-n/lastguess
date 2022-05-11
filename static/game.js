@@ -92,6 +92,10 @@ $(document).ready(function () {
     $('#game').submit(function (event) {
         event.preventDefault();
 
+        if (title_done && artist_done && next_line_done) {
+            return;
+        }
+
         let active = document.activeElement;
 
         if (!title_done) {
@@ -331,12 +335,12 @@ function show_answers() {
 
 function switch_theme_to(theme) {
     if (theme === 'dark') {
-        localStorage.setItem('theme', 'dark');
         $('html').attr('theme', 'dark');
         $('#theme-button').html('light theme');
+        localStorage.setItem('theme', 'dark');
     } else {
-        localStorage.setItem('theme', 'light');
         $('html').attr('theme', 'light');
         $('#theme-button').html('dark theme');
+        localStorage.setItem('theme', 'light');
     }
 }

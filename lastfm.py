@@ -11,7 +11,7 @@ class LastFMError(Exception):
     def __init__(self, code):
         self.code = code
     def __str__(self):
-        return 'last.fm error with code {}'.format(self.code)
+        return f'last.fm error with code {self.code}'
 
 def get_top_tracks(user, count, period):
     res = requests.get('http://ws.audioscrobbler.com/2.0',

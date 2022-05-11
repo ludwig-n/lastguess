@@ -66,33 +66,33 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
     while True:
         with questions_lock:
             if len(questions) >= 10:
-                logging.info('{} done (no more questions needed)'.format(name))
+                logging.info(f'{name} done (no more questions needed)')
                 return
 
         with track_enumerator_lock:
             try:
                 index, track = next(track_enumerator)
             except StopIteration:
-                logging.warning('{} exiting (out of tracks)'.format(name))
+                logging.warning(f'{name} exiting (out of tracks)')
                 return
         if index >= max_total_tries:
-            logging.warning('{} exiting (exceeded {} total tries)'.format(name, max_total_tries))
+            logging.warning(f'{name} exiting (exceeded {max_total_tries} total tries)')
             return
 
         lyrics = genius.get_lyrics_by_name(track.title, track.artist)
         
         with questions_lock:
             if len(questions) >= 10:
-                logging.info('{} done (no more questions needed)'.format(name))
+                logging.info(f'{name} done (no more questions needed)')
                 return
 
-        logging_prefix = '{}, track {} ({} - {}):'.format(name, index + 1, track.artist, track.title)
+        logging_prefix = f'{name}, track {index + 1} ({track.artist} - {track.title}):'
 
         if lyrics is None:
-            logging.warning('{} couldn\'t find track on genius'.format(logging_prefix))
+            logging.warning(f'{logging_prefix} couldn\'t find track on genius')
             continue
         elif not lyrics:
-            logging.warning('{} found track on genius but couldn\'t scrape lyrics'.format(logging_prefix))
+            logging.warning(f'{logging_prefix} found track on genius but couldn\'t scrape lyrics')
             continue
 
         lines = lyrics.split('\n')
@@ -128,12 +128,12 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
             with questions_lock:
                 if len(questions) < 10:
                     questions.append(Question(line, track.title, track.artist, next_line))
-                    logging.info('{} loaded question successfully'.format(logging_prefix))
+                    logging.info(f'{logging_prefix} loaded question successfully')
                 if len(questions) >= 10:
-                    logging.info('{} done (no more questions needed)'.format(name))
+                    logging.info(f'{name} done (no more questions needed)')
                     return
         else:
-            logging.warning('{} loaded lyrics but couldn\'t find a valid pair'.format(logging_prefix))
+            logging.warning(f'{logging_prefix} loaded lyrics but couldn\'t find a valid pair')
 
 app = flask.Flask(__name__)
 app.secret_key = settings.FLASK_SECRET_KEY
@@ -197,7 +197,7 @@ def handle_post_request():
 
         logging.info('loading questions')
         threads = [threading.Thread(target=load_questions, args=(track_enumerator, questions),
-                                    name='Question Loader {}'.format(i + 1)) for i in range(15)]
+                                    name=f'Question Loader {i + 1}') for i in range(15)]
 
         for thread in threads:
             thread.start()
@@ -209,7 +209,7 @@ def handle_post_request():
 
         with questions_lock:
             if len(questions) < 10:
-                logging.error('failed to load questions ({}/{}/{})'.format(username, count, period))
+                logging.error(f'failed to load questions ({username}/{count}/{period})')
                 return {'status': 'failed_to_load_questions'}
             elif len(questions) > 10:  # don't think this can actually happen but just in case
                 questions = questions[:10]
@@ -266,13 +266,13 @@ def handle_post_request():
 @app.route('/', methods=['GET', 'POST'])
 def main():
     if flask.request.method == 'POST':
-        logging.info('RECEIVED {}'.format(dict(flask.request.form.items())))
+        logging.info(f'RECEIVED {dict(flask.request.form.items())}')
         try:
             response = handle_post_request()
         except:
             logging.exception('exception while processing post request:')
             response = {'status': 'unknown_error'}
-        logging.info('RETURNED {}'.format(response))
+        logging.info(f'RETURNED {response}')
         return response
     else:
         response = flask.make_response(flask.render_template('app.html'))

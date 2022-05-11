@@ -169,13 +169,8 @@ input[type=text]:focus-visible, select:focus-visible {
     border-color: var(--input-focus-color);
 }
 
-input[type=text]:disabled, select:disabled {
-    background: var(--bg-color);
-    color: var(--sub-color);
-}
-
-#lg-username:disabled {
-    border-color: var(--sub-color);
+#lg-username:disabled, select:disabled {
+    opacity: 0.7;
 }
 
 input[type=text].answer-box {

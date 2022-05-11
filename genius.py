@@ -24,9 +24,9 @@ def get_lyrics_by_name(title, artist, try_junk_filters=True, debug_mode=False):
     """Returns a string containing the lyrics, or None if the song wasn't found on Genius,
     or an empty string if the song was found but the lyrics couldn't be scraped."""
     if debug_mode:
-        print('Looking for  {} - {}'.format(artist, title))
+        print(f'Looking for  {artist} - {title}')
 
-    results = search(title + ' ' + artist)[:3]
+    results = search(f'{title} {artist}')[:3]
     for x in results:
         if (comparing.similar_simplified(title, x['title']) or
             comparing.similar_simplified(title, filtering.apply_filters(x['title'],
@@ -36,7 +36,7 @@ def get_lyrics_by_name(title, artist, try_junk_filters=True, debug_mode=False):
                                                                          filtering.GENIUS_ARTIST_ALIAS_FILTERS +
                                                                          filtering.GENIUS_CYRILLIC_FILTERS))):
             if debug_mode:
-                print('Matched with {} - {}'.format(x['primary_artist']['name'], x['title']))
+                print(f"Matched with {x['primary_artist']['name']} - {x['title']}")
             return get_lyrics(x)
 
     if try_junk_filters:
