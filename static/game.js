@@ -278,7 +278,7 @@ function advance_round() {
     $('#round').html(`round ${round} of 10`);
     $('#question').html(questions[round - 1]['line']);
 
-    $('#game > input').prop('disabled', false).css('color', 'var(--fg-color)').val('');
+    $('.answer-box').prop('disabled', false).css('color', 'var(--fg-color)').val('');
     $('.parent-feed').show().css('color', 'var(--sub-color)');
     $('.points-feed').html('3pts');
     $('#next-line-points').html('4pts');

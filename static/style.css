@@ -176,6 +176,7 @@ input[type=text]:focus-visible, select:focus-visible {
 input[type=text].answer-box {
     margin-left: 5px;
     margin-right: 5px;
+    backface-visibility: hidden;
 }
 
 /* buttons */
