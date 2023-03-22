@@ -1,10 +1,13 @@
 import difflib
 
+
 def simplify(s):
     return ''.join(ch.lower() for ch in s if ch.isalnum())
 
+
 def similar(s1, s2):
     return s1 and s2 and difflib.SequenceMatcher(None, s1, s2).ratio() >= 0.8
+
 
 def similar_simplified(s1, s2, try_shorten_first=False):
     s1 = simplify(s1)

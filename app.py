@@ -6,10 +6,11 @@ import threading
 import flask
 
 import comparing
-import filtering
+import filters
 import genius
 import lastfm
 import settings
+
 
 logging.config.dictConfig({
     'version': 1,
@@ -40,26 +41,29 @@ logging.config.dictConfig({
     }
 })
 
+
 class Question:
     def __init__(self, line, title, artist, next_line):
         self.line = line
 
         self.titles = [title]
-        for filter_list in (filtering.TITLE_JUNK_FILTERS, filtering.BRACKET_FILTERS):
-            alt = filtering.apply_filters(self.titles[-1], filter_list)
-            if alt != self.titles[-1]:
-                self.titles.append(filtering.apply_filters(alt, filtering.CLEANUP_FILTERS))
+        for filter_list in [filters.TITLE_JUNK, filters.BRACKETS]:
+            alt_title = filters.apply(self.titles[-1], filter_list)
+            if alt_title != self.titles[-1]:
+                self.titles.append(filters.apply(alt_title, filters.CLEANUP))
 
         self.artists = [artist]
-        for filter_list in (filtering.ARTIST_JUNK_FILTERS, filtering.BRACKET_FILTERS):
-            alt = filtering.apply_filters(self.artists[-1], filter_list)
-            if alt != self.artists[-1]:
-                self.artists.append(filtering.apply_filters(alt, filtering.CLEANUP_FILTERS))
+        for filter_list in [filters.ARTIST_JUNK, filters.BRACKETS]:
+            alt_artist = filters.apply(self.artists[-1], filter_list)
+            if alt_artist != self.artists[-1]:
+                self.artists.append(filters.apply(alt_artist, filters.CLEANUP))
 
         self.next_line = next_line
 
+
 track_enumerator_lock = threading.Lock()
 questions_lock = threading.Lock()
+
 
 def load_questions(track_enumerator, questions, max_total_tries=150):
     name = threading.current_thread().name
@@ -80,7 +84,7 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
             return
 
         lyrics = genius.get_lyrics_by_name(track.title, track.artist)
-        
+
         with questions_lock:
             if len(questions) >= 10:
                 logging.info(f'{name} done (no more questions needed)')
@@ -96,32 +100,33 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
             continue
 
         lines = lyrics.split('\n')
-        simplified_lines = [comparing.simplify(x) for x in lines]
+        simplified_lines = [comparing.simplify(line) for line in lines]
+        is_lyric = [
+            len(simple_line) > 0 and '[' not in line
+            for line, simple_line in zip(lines, simplified_lines)
+        ]
 
-        usable = [True] * len(lines)
         duplicate = [False] * len(lines)
-
         for i in range(len(lines)):
-            if not simplified_lines[i] or '[' in lines[i]:
-                usable[i] = False
+            if not is_lyric[i]:
                 continue
             for j in range(i):
-                if usable[j] and comparing.similar(simplified_lines[i][:len(simplified_lines[j])],
-                                                   simplified_lines[j][:len(simplified_lines[i])]):
+                min_len = min(len(simplified_lines[i]), len(simplified_lines[j]))
+                if is_lyric[j] and comparing.similar(simplified_lines[i][:min_len], simplified_lines[j][:min_len]):
                     duplicate[i] = True
                     duplicate[j] = True
                     break
 
-        valid_pairs = []
-        for i in range(len(lines) - 1):
-            if usable[i] and \
-                    usable[i + 1] and \
-                    not duplicate[i] and \
-                    15 <= len(simplified_lines[i]) <= 50 and \
-                    15 <= len(simplified_lines[i + 1]) <= 50 and \
-                    '(' not in lines[i] and \
-                    '(' not in lines[i + 1]:
-                valid_pairs.append((lines[i], lines[i + 1]))
+        playable = [
+            is_lyr and 15 <= len(simple_line) <= 50 and '(' not in line
+            for line, simple_line, is_lyr in zip(lines, simplified_lines, is_lyric)
+        ]
+
+        valid_pairs = [
+            (lines[i], lines[i + 1])
+            for i in range(len(lines) - 1)
+            if playable[i] and playable[i + 1] and not duplicate[i]
+        ]
 
         if valid_pairs:
             line, next_line = random.choice(valid_pairs)
@@ -135,8 +140,10 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
         else:
             logging.warning(f'{logging_prefix} loaded lyrics but couldn\'t find a valid pair')
 
+
 app = flask.Flask(__name__)
 app.secret_key = settings.FLASK_SECRET_KEY
+
 
 def handle_post_request():
     action = flask.request.form.get('action')
@@ -146,8 +153,8 @@ def handle_post_request():
         count = flask.request.form.get('count')
         period = flask.request.form.get('period')
         if username is None \
-                or count not in ('50', '100', '200', '500', '1000') \
-                or period not in ('overall', '7day', '1month', '3month', '6month', '12month'):
+                or count not in ['50', '100', '200', '500', '1000'] \
+                or period not in ['overall', '7day', '1month', '3month', '6month', '12month']:
             return {'status': 'bad_request'}
 
         username = username.lower()
@@ -196,8 +203,10 @@ def handle_post_request():
         questions = []
 
         logging.info('loading questions')
-        threads = [threading.Thread(target=load_questions, args=(track_enumerator, questions),
-                                    name=f'Question Loader {i + 1}') for i in range(15)]
+        threads = [
+            threading.Thread(target=load_questions, args=(track_enumerator, questions), name=f'Question Loader {i + 1}')
+            for i in range(15)
+        ]
 
         for thread in threads:
             thread.start()
@@ -227,7 +236,6 @@ def handle_post_request():
                                (game_id, i, question.line, question.titles[0], question.artists[0], question.next_line))
 
         db.commit()
-
         return {'status': 'ok', 'questions': [vars(question) for question in questions]}
     elif action == 'submit_score':
         try:
@@ -237,7 +245,7 @@ def handle_post_request():
             next_line_pts = int(flask.request.form.get('next_line_pts'))
         except ValueError:
             return {'status': 'bad_request'}
-        if not (1 <= round <= 10 and 0 <= title_pts <= 3 and 0 <= artist_pts <= 3 and next_line_pts in (0, 1, 3, 4)):
+        if not (1 <= round <= 10 and 0 <= title_pts <= 3 and 0 <= artist_pts <= 3 and next_line_pts in [0, 1, 3, 4]):
             return {'status': 'bad_request'}
 
         game_id = flask.session.get('game_id')
@@ -263,6 +271,7 @@ def handle_post_request():
     else:
         return {'status': 'bad_request'}
 
+
 @app.route('/', methods=['GET', 'POST'])
 def main():
     if flask.request.method == 'POST':
@@ -276,6 +285,7 @@ def main():
         return response
     else:
         return flask.render_template('app.html')
+
 
 if __name__ == '__main__':
     app.run(host=settings.HOST, port=settings.PORT, threaded=True)
