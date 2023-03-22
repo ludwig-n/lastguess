@@ -6,7 +6,7 @@ def simplify(s):
 
 
 def similar(s1, s2):
-    return s1 and s2 and difflib.SequenceMatcher(None, s1, s2).ratio() >= 0.8
+    return len(s1) > 0 and len(s2) > 0 and difflib.SequenceMatcher(None, s1, s2).ratio() >= 0.8
 
 
 def similar_simplified(s1, s2, try_shorten_first=False):
