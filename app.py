@@ -16,7 +16,7 @@ logging.config.dictConfig({
     'version': 1,
     'formatters': {
         'formatter': {
-            'format': u'[%(asctime)s] (%(levelname)s/%(name)s): %(message)s'
+            'format': '[%(asctime)s] %(name)s %(levelname)s in %(threadName)s: %(message)s'
         }
     },
     'handlers': {
@@ -62,34 +62,31 @@ class Question:
 
 
 def load_questions(tracks, questions, tracks_lock, questions_lock):
-    name = threading.current_thread().name
     while True:
         with questions_lock:
             if len(questions) >= 10:
-                logging.info(f'{name} done (no more questions needed)')
+                logging.info('done (no more questions needed)')
                 return
 
         try:
             with tracks_lock:
                 track = next(tracks)
         except StopIteration:
-            logging.warning(f'{name} exiting (out of tracks)')
+            logging.warning('exiting (out of tracks)')
             return
 
         lyrics = genius.get_lyrics_by_name(track.title, track.artist)
 
         with questions_lock:
             if len(questions) >= 10:
-                logging.info(f'{name} done (no more questions needed)')
+                logging.info('done (no more questions needed)')
                 return
 
-        logging_prefix = f'{name}, {track.artist} - {track.title}:'
-
         if lyrics is None:
-            logging.warning(f'{logging_prefix} couldn\'t find track on genius')
+            logging.warning(f'{track}: couldn\'t find track on genius')
             continue
         elif not lyrics:
-            logging.warning(f'{logging_prefix} found track on genius but couldn\'t scrape lyrics')
+            logging.warning(f'{track}: found track on genius but couldn\'t scrape lyrics')
             continue
 
         lines = lyrics.split('\n')
@@ -126,12 +123,12 @@ def load_questions(tracks, questions, tracks_lock, questions_lock):
             with questions_lock:
                 if len(questions) < 10:
                     questions.append(Question(line, track.title, track.artist, next_line))
-                    logging.info(f'{logging_prefix} loaded question successfully')
+                    logging.info(f'{track}: loaded question successfully')
                 if len(questions) >= 10:
-                    logging.info(f'{name} done (no more questions needed)')
+                    logging.info('done (no more questions needed)')
                     return
         else:
-            logging.warning(f'{logging_prefix} loaded lyrics but couldn\'t find a valid pair')
+            logging.warning(f'{track}: loaded lyrics but couldn\'t find a valid pair')
 
 
 app = flask.Flask(__name__)
@@ -196,13 +193,14 @@ def handle_post_request():
         questions = []
         tracks_lock = threading.Lock()
         questions_lock = threading.Lock()
+        name = threading.current_thread().name
 
         logging.info('loading questions')
         threads = [
             threading.Thread(
                 target=load_questions,
                 args=(tracks_iter, questions, tracks_lock, questions_lock),
-                name=f'Question Loader {i + 1}'
+                name=f'{name}/Loader-{i + 1}'
             )
             for i in range(15)
         ]
@@ -275,13 +273,13 @@ def handle_post_request():
 @app.route('/', methods=['GET', 'POST'])
 def main():
     if flask.request.method == 'POST':
-        logging.info(f'RECEIVED {dict(flask.request.form.items())}')
+        logging.info(f'received {dict(flask.request.form.items())}')
         try:
             response = handle_post_request()
         except:
             logging.exception('exception while processing post request:')
             response = {'status': 'unknown_error'}
-        logging.info(f'RETURNED {response}')
+        logging.info(f'returned {response}')
         return response
     else:
         return flask.render_template('app.html')
