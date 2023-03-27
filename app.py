@@ -61,11 +61,7 @@ class Question:
         self.next_line = next_line
 
 
-track_enumerator_lock = threading.Lock()
-questions_lock = threading.Lock()
-
-
-def load_questions(track_enumerator, questions, max_total_tries=150):
+def load_questions(tracks, questions, tracks_lock, questions_lock):
     name = threading.current_thread().name
     while True:
         with questions_lock:
@@ -73,14 +69,11 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
                 logging.info(f'{name} done (no more questions needed)')
                 return
 
-        with track_enumerator_lock:
-            try:
-                index, track = next(track_enumerator)
-            except StopIteration:
-                logging.warning(f'{name} exiting (out of tracks)')
-                return
-        if index >= max_total_tries:
-            logging.warning(f'{name} exiting (exceeded {max_total_tries} total tries)')
+        try:
+            with tracks_lock:
+                track = next(tracks)
+        except StopIteration:
+            logging.warning(f'{name} exiting (out of tracks)')
             return
 
         lyrics = genius.get_lyrics_by_name(track.title, track.artist)
@@ -90,7 +83,7 @@ def load_questions(track_enumerator, questions, max_total_tries=150):
                 logging.info(f'{name} done (no more questions needed)')
                 return
 
-        logging_prefix = f'{name}, track {index + 1} ({track.artist} - {track.title}):'
+        logging_prefix = f'{name}, {track.artist} - {track.title}:'
 
         if lyrics is None:
             logging.warning(f'{logging_prefix} couldn\'t find track on genius')
@@ -185,26 +178,32 @@ def handle_post_request():
         used_tracks = {(row['title'], row['artist']) for row in cursor.fetchall()}
 
         if used_tracks:
-            primary_tracks = []
-            secondary_tracks = []
+            unplayed_tracks = []
+            played_tracks = []
             for track in tracks:
                 if (track.title, track.artist) in used_tracks:
-                    secondary_tracks.append(track)
+                    played_tracks.append(track)
                 else:
-                    primary_tracks.append(track)
-
-            random.shuffle(primary_tracks)
-            random.shuffle(secondary_tracks)
-            tracks = primary_tracks + secondary_tracks
+                    unplayed_tracks.append(track)
+            random.shuffle(unplayed_tracks)
+            random.shuffle(played_tracks)
+            tracks = unplayed_tracks[:140] + played_tracks[:10]
         else:
             random.shuffle(tracks)
+            tracks = tracks[:150]
 
-        track_enumerator = enumerate(tracks)
+        tracks_iter = iter(tracks)
         questions = []
+        tracks_lock = threading.Lock()
+        questions_lock = threading.Lock()
 
         logging.info('loading questions')
         threads = [
-            threading.Thread(target=load_questions, args=(track_enumerator, questions), name=f'Question Loader {i + 1}')
+            threading.Thread(
+                target=load_questions,
+                args=(tracks_iter, questions, tracks_lock, questions_lock),
+                name=f'Question Loader {i + 1}'
+            )
             for i in range(15)
         ]
 
@@ -234,9 +233,10 @@ def handle_post_request():
                 cursor.execute('INSERT INTO question(game_id, round, line, title, artist, next_line, '
                                'title_pts, artist_pts, next_line_pts) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
                                (game_id, i, question.line, question.titles[0], question.artists[0], question.next_line))
+            questions_data = [vars(question) for question in questions]
 
         db.commit()
-        return {'status': 'ok', 'questions': [vars(question) for question in questions]}
+        return {'status': 'ok', 'questions': questions_data}
     elif action == 'submit_score':
         try:
             round = int(flask.request.form.get('round'))
