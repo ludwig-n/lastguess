@@ -105,7 +105,6 @@ def load_questions(tracks, questions, tracks_lock, questions_lock):
                 if is_lyric[j] and comparing.similar(simplified_lines[i][:min_len], simplified_lines[j][:min_len]):
                     duplicate[i] = True
                     duplicate[j] = True
-                    break
 
         playable = [
             is_lyr and 15 <= len(simple_line) <= 50 and '(' not in line
